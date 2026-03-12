@@ -1,42 +1,65 @@
-# Satellite Image Classification - Assignment 2
+# Satellite Image Classification - GNR 638 Assignment 2
 
-A comprehensive **PyTorch-based** deep learning solution for satellite image classification using transfer learning with ResNet50, EfficientNet B0, and InceptionV3.
+A comprehensive **PyTorch-based** deep learning solution for satellite image classification using transfer learning with **ResNet50**, **EfficientNet-B0**, and **InceptionV3**.
 
-## Project Structure
+## 🚀 Quick Start
+
+```bash
+# Step 1: Create few-shot data splits
+python create_splits.py
+
+# Step 2: Train a model (example: Linear probe on 100% data)
+python train.py --model resnet50 --training-mode linear_probe --few-shot-percentage 100 --epochs 30 --batch-size 32
+
+# Step 3: Run advanced evaluations (corruption robustness + layer-wise probing)
+python evaluate_advanced.py --model resnet50 --model-path results_linear_probe_resnet50/final_model.pth --batch-size 32
+```
+
+## 📋 Assignment Implementation
+
+This project implements all **5 scenarios** from GNR 638 Assignment 2:
+
+- **Scenario 4.1**: Linear probe (frozen backbone, head-only training)
+- **Scenario 4.2**: Fine-tuning modes (last block, partial, selective, full)
+- **Scenario 4.3**: Few-shot learning (100%, 20%, 5% data regimes)
+- **Scenario 4.4**: Corruption robustness (Gaussian noise, motion blur, brightness)
+- **Scenario 4.5**: Layer-wise feature probing (early, middle, final layers)
+
+## 📁 Project Structure
 
 ```
-├── config.py              # Centralized configuration (all parameters & paths)
-├── models.py              # Model training classes and functions (PyTorch)
-├── train.py               # Unified training script with CLI
-├── evaluate.py            # Model evaluation script with CLI
-├── data_utils.py          # PyTorch data loading and preprocessing
+├── config.py                     # Configuration & hyperparameters
+├── models.py                     # Model training classes (PyTorch)
+├── train.py                      # Training script with CLI
+├── evaluate.py                   # Evaluation script
+├── evaluate_advanced.py          # Corruption & layer-wise probing
+├── data_utils.py                 # Data loading & preprocessing
+├── create_splits.py              # Generate few-shot data splits
+├── corruption_robustness.py      # Scenario 4.4 implementation
+├── layer_wise_probing.py         # Scenario 4.5 implementation
+├── feature_embeddings.py         # Feature extraction utilities
 ├── data/
-│   └── split_data/
-│       ├── train/         # Training data (33 classes)
-│       ├── val/           # Validation data (33 classes)
-│       └── test/          # Test data (33 classes)
-└── results/               # Output directory (models, plots, reports)
+│   ├── train_data/               # Original dataset (33 classes)
+│   └── split_data_fewshot_*/     # Generated splits (100%, 20%, 5%)
+└── results_*/                    # Results folders (one per experiment)
 ```
 
-## Configuration
+## ⚙️ Configuration
 
-All settings are centralized in `config.py`:
+All settings centralized in `config.py`:
 
-- **Data paths**: Training, validation, and test directories
-- **Training parameters**: Epochs, batch size, learning rates
-- **Model specifications**: Input sizes, hidden layers, dropout rates
+- **Fixed hyperparameters**:
+  - Learning rates: 0.01 (linear probe), 0.0001 (fine-tuning)
+  - Batch size: 32 (all experiments)
+  - Epochs: 30 (full data), 20 (few-shot)
+  - Random seed: 42 (reproducibility)
+
+- **Data split**: 90% training, 10% validation (from original data)
+- **Few-shot support**: Automatic 100%, 20%, 5% data regime handling
+- **Models**: ResNet50 (224×224), EfficientNet-B0 (224×224), InceptionV3 (299×299)
 - **Data augmentation**: Rotation, zoom, shifts, flips
-- **Output paths**: Model save locations, plot paths
 
-### Available Models
-
-1. **ResNet50**: Input size 224×224, 50 layers
-2. **EfficientNet B0**: Input size 224×224, efficient architecture
-3. **InceptionV3**: Input size 299×299, multi-scale features
-
-## Installation
-
-Install required packages:
+## 📦 Installation
 
 ```bash
 pip install torch torchvision torchaudio
@@ -45,214 +68,218 @@ pip install numpy pandas matplotlib scikit-learn pillow seaborn tqdm
 
 ### GPU Support
 
-PyTorch will automatically detect and use CUDA if available. To force CPU usage:
+GPU automatically detected and used. To force CPU:
 
 ```bash
 export CUDA_VISIBLE_DEVICES=""
-python train.py --model resnet50
 ```
 
-## Usage
+## 🎯 Training Modes
 
-### Training Modes
-
-The system supports four different training strategies to balance speed vs accuracy:
-
-#### 1. Linear Probing
-- **Description**: Train only the top classification layer while keeping the backbone frozen
-- **Use case**: Quick baseline training with minimal computational cost
-- **Best for**: Data-efficient scenarios, quick experimentation
+### 1. Linear Probe
+- Train only classification head (frozen backbone)
+- Fastest, least parameters updated
+- Use case: Baseline, quick experimentation
 
 ```bash
-python train.py --model resnet50 --training-mode linear_probe
+python train.py --model resnet50 --training-mode linear_probe --few-shot-percentage 100
 ```
 
-#### 2. Partial Fine-tuning
-- **Description**: Unfreeze the last 50 layers and train with lower learning rate
-- **Use case**: Balance between speed and accuracy
-- **Best for**: Good accuracy with moderate training time
+### 2. Last Block Fine-Tuning
+- Unfreeze last residual block, train with LR=0.0001
+- Balance between speed and accuracy
+- Use case: Good accuracy with moderate training time
 
 ```bash
-python train.py --model resnet50 --training-mode partial_finetune
+python train.py --model resnet50 --training-mode last_block_finetune --few-shot-percentage 100
 ```
 
-#### 3. Full Fine-tuning
-- **Description**: Unfreeze all layers and train the entire network with very low learning rate
-- **Use case**: Maximum accuracy when sufficient data and compute available
-- **Best for**: Fully utilizing the model capacity
+### 3. Partial Fine-Tuning
+- Unfreeze 50% of layers (from last), train with LR=0.0001
+- More parameters updated than last block
+- Use case: Better accuracy with longer training
 
 ```bash
-python train.py --model resnet50 --training-mode full_finetune
+python train.py --model resnet50 --training-mode partial_finetune --few-shot-percentage 100
 ```
 
-#### 4. Two-Stage Training (Default)
-- **Description**: Combines linear probing (30 epochs) + partial fine-tuning (50 epochs)
-- **Use case**: Best overall balance of speed and accuracy
-- **Best for**: Most practical applications
+### 4. Selective 20% - Last Layers
+- Selectively unfreeze 20% of total parameters (last layers)
+- Targeted fine-tuning strategy
+- Use case: Limited computational budget
 
 ```bash
-python train.py --model resnet50 --training-mode two_stage
-python train.py --all --training-mode two_stage
+python train.py --model resnet50 --training-mode selective_20percent_last --few-shot-percentage 100
 ```
 
-### Training Models
+### 5. Selective 20% - Random Layers
+- Selectively unfreeze 20% of random parameters
+- Diverse layer updates across network
+- Use case: Exploring alternative fine-tuning strategies
 
-#### Train a specific model:
 ```bash
-python train.py --model resnet50
-python train.py --model efficientnetb0
-python train.py --model inceptionv3
+python train.py --model resnet50 --training-mode selective_20percent_random --few-shot-percentage 100
 ```
 
-#### Train with specific training mode:
+### 6. Full Fine-Tuning
+- Unfreeze all layers, train entire network with LR=0.0001
+- Maximum parameters updated, longest training
+- Use case: Maximum accuracy when sufficient data/compute available
+
 ```bash
-python train.py --model resnet50 --training-mode linear_probe
-python train.py --model efficientnetb0 --training-mode two_stage
-python train.py --model inceptionv3 --training-mode full_finetune
+python train.py --model resnet50 --training-mode full_finetune --few-shot-percentage 100
 ```
 
-#### Train all models:
+## 🧪 Experiments
+
+### Few-Shot Data Regimes
+
+Run experiments with different amounts of training data:
+
 ```bash
-python train.py --all
+# 100% data (9,000 training images, 30 epochs)
+python train.py --model resnet50 --training-mode linear_probe --few-shot-percentage 100 --epochs 30
+
+# 20% data (1,800 training images, 20 epochs)
+python train.py --model resnet50 --training-mode linear_probe --few-shot-percentage 20 --epochs 20
+
+# 5% data (450 training images, 20 epochs)
+python train.py --model resnet50 --training-mode linear_probe --few-shot-percentage 5 --epochs 20
 ```
 
-#### Train all with specific mode:
+### Complete Experiment Suite
+
+Train all models with all modes and all data regimes:
+
 ```bash
-python train.py --all --training-mode partial_finetune
+# Phase 0: Create splits
+python create_splits.py
+
+# Phase 1: Linear probe (9 configs: 3 models × 3 percentages)
+for pct in 100 20 5; do
+  for model in resnet50 efficientnetb0 inceptionv3; do
+    epochs=$([[ $pct -eq 100 ]] && echo 30 || echo 20)
+    python train.py --model $model --training-mode linear_probe --few-shot-percentage $pct --epochs $epochs
+  done
+done
+
+# Phase 2: Fine-tuning (45 configs: 5 modes × 3 percentages × 3 models)
+for pct in 100 20 5; do
+  epochs=$([[ $pct -eq 100 ]] && echo 30 || echo 20)
+  for mode in last_block_finetune partial_finetune selective_20percent_last selective_20percent_random full_finetune; do
+    for model in resnet50 efficientnetb0 inceptionv3; do
+      python train.py --model $model --training-mode $mode --few-shot-percentage $pct --epochs $epochs
+    done
+  done
+done
+
+# Phase 3: Advanced evaluations (corruption + layer-wise probing)
+for model in resnet50 efficientnetb0 inceptionv3; do
+  python evaluate_advanced.py --model $model --model-path results_linear_probe_${model}/final_model.pth
+done
 ```
 
-#### Show configuration:
-```bash
-python train.py --config
-```
+**Total**: 54+ training configurations + 6 advanced evaluations = 60+ experiments  
+**Time**: ~22-24 hours (can run parallel on multiple GPUs)
 
-#### List available models and training modes:
-```bash
-python train.py --list-models
-```
+## 📊 Output Structure
 
-### Evaluating Models
-
-#### Evaluate a specific model:
-```bash
-python evaluate.py --model resnet50
-python evaluate.py --model efficientnetb0
-python evaluate.py --model inceptionv3
-```
-
-#### Evaluate all trained models:
-```bash
-python evaluate.py --all
-```
-
-#### List available models:
-```bash
-python evaluate.py --list-models
-```
-
-## Training Pipeline
-
-### 1. Data Loading and Preprocessing
-
-- Loads images from organized directory structure (33 classes)
-- Applies data augmentation (rotation, zoom, shifts, flips)
-- Rescales images to model-specific input sizes
-- Uses PyTorch DataLoader for efficient batch processing
-
-### 2. Model Building
-
-- Loads ImageNet pre-trained weights from torchvision
-- Freezes base model layers initially
-- Adds custom top layers with dense and dropout layers
-- Uses CrossEntropyLoss and Adam optimizer
-
-### 3. Initial Training
-
-- Trains with frozen base model layers
-- Early stopping when validation loss plateaus
-- Reduces learning rate on validation loss plateau
-- Saves best model checkpoints
-- Epochs: 50 (or until early stopping)
-
-### 4. Fine-tuning
-
-- Unfreezes last 50 base model layers
-- Uses lower learning rate (0.0001)
-- Trains again with same callbacks
-- Further improves model performance
-
-### 5. Evaluation
-
-- Tests on test set
-- Generates confusion matrices
-- Creates classification reports
-- Compares model accuracies
-
-## Output Files
-
-Models and results are saved in the `results/` directory:
+Each experiment creates a separate results folder:
 
 ```
-results/
-├── resnet50_final_model.pth
-├── resnet50_best_model.pth
-├── resnet50_training_history.png
-├── resnet50_confusion_matrix.png
-├── resnet50_classification_report.txt
-├── efficientnetb0_final_model.pth
-├── efficientnetb0_best_model.pth
-├── efficientnetb0_training_history.png
-├── efficientnetb0_confusion_matrix.png
-├── efficientnetb0_classification_report.txt
-├── inceptionv3_final_model.pth
-├── inceptionv3_best_model.pth
-├── inceptionv3_training_history.png
-├── inceptionv3_confusion_matrix.png
-├── inceptionv3_classification_report.txt
-├── accuracy_comparison.png
-└── evaluation_summary_report.txt
+results_linear_probe_resnet50/
+├── training_log.txt              # Training metrics & logs
+├── final_model.pth               # Final trained model
+├── best_model.pth                # Best validation checkpoint
+├── training_history.png          # Loss/accuracy curves
+├── confusion_matrix.png          # Validation confusion matrix
+└── classification_report.txt     # Per-class metrics
+
+results_linear_probe_resnet50_20/
+├── training_log.txt
+├── final_model.pth
+├── ... (same structure)
+
+results_full_finetune_efficientnetb0_5/
+├── training_log.txt
+├── ... (same structure)
+
+results_corruption_robustness_resnet50/
+├── training_log.txt
+└── training_history.png          # 4-panel robustness plot
+
+results_layer_wise_probing_inceptionv3/
+├── training_log.txt
+└── training_history.png          # Layer-wise accuracy + feature norms
 ```
 
-## Key Features
+## 🔍 Key Features
 
-✅ **Pure PyTorch**: Uses PyTorch for all deep learning operations  
-✅ **Transfer Learning**: Uses ImageNet pre-trained weights  
-✅ **Data Augmentation**: Rotation, zoom, shifts, and flips  
-✅ **Flexible Configuration**: Easily modify parameters in config.py  
-✅ **Unified Training**: Single script handles all models  
-✅ **Comprehensive Evaluation**: Confusion matrices, classification reports  
-✅ **33 Classes**: Handles all satellite image categories  
-✅ **Visualizations**: Training curves, confusion matrices, accuracy plots  
-✅ **GPU Support**: Automatic GPU detection and utilization  
+✅ **Pure PyTorch**: All deep learning operations in PyTorch  
+✅ **Transfer Learning**: ImageNet pre-trained models  
+✅ **Data Augmentation**: Rotation, zoom, shifts, flips  
+✅ **Flexible Config**: Centralized parameter management  
+✅ **6 Training Modes**: Multiple fine-tuning strategies  
+✅ **Few-Shot Support**: 100%, 20%, 5% data regimes  
+✅ **33 Classes**: All satellite image categories  
+✅ **Visualizations**: Training curves, confusion matrices, robustness plots  
+✅ **GPU Optimized**: Automatic GPU detection and DataParallel  
+✅ **Reproducible**: Fixed random seeds, deterministic behavior  
+✅ **Advanced Evaluation**: Corruption robustness + layer-wise probing  
 ✅ **CLI Interface**: Easy command-line usage with argparse
 
-## Model Performance
+## 📈 Advanced Evaluations
 
-After training and evaluation, comparison metrics are generated including:
-- Test set accuracy for each model
-- Per-class precision, recall, and F1-scores
-- Confusion matrices
-- Training history plots
-- Summary report with best model identification
+### Corruption Robustness (Scenario 4.4)
 
-## Customization
+Evaluate model robustness to distribution shifts:
 
-To modify training parameters, edit `config.py`:
+```bash
+python evaluate_advanced.py --model resnet50 --model-path results_linear_probe_resnet50/final_model.pth
+```
+
+Tests with:
+- **Gaussian noise** (σ = 0.05, 0.10, 0.20)
+- **Motion blur** (kernel sizes)
+- **Brightness shift** (factors 0.5, 1.5)
+
+Metrics: Clean accuracy, corruption accuracy, robustness ratio
+
+### Layer-Wise Probing (Scenario 4.5)
+
+Analyze feature learning across layers:
+
+```bash
+python evaluate_advanced.py --model efficientnetb0 --model-path results_linear_probe_efficientnetb0/final_model.pth
+```
+
+Analyzes:
+- **Early layers** (25% depth): Low-level features
+- **Middle layers** (50% depth): Mid-level features
+- **Final layers** (100% depth): High-level features
+
+Metrics: Layer-wise accuracy, feature norms, abstraction progression
+
+## 🔧 Customization
+
+Modify `config.py` to change:
 
 ```python
-# Change number of epochs
-EPOCHS = 50
+# Data split (currently 90/10)
+TRAIN_SIZE = 0.9
 
-# Change batch size
+# Learning rates (fixed for reproducibility)
+LINEAR_PROBE_LR = 0.01
+FINETUNE_LR = 0.0001
+
+# Batch size (fixed)
 BATCH_SIZE = 32
 
-# Change learning rate
-INITIAL_LEARNING_RATE = 0.001
+# Max epochs (adjusts based on data regime)
+MAX_EPOCHS_FULL_DATA = 30
+MAX_EPOCHS_FEW_SHOT = 20
 
-# Change dropout rate for all models
-'dropout_rate': 0.3
-
-# Change data augmentation
+# Data augmentation
 DATA_AUGMENTATION_CONFIG = {
     'rotation_range': 20,
     'zoom_range': 0.2,
@@ -260,56 +287,60 @@ DATA_AUGMENTATION_CONFIG = {
 }
 ```
 
-## Troubleshooting
+## 📝 Constraints & Specifications
+
+**Fixed Parameters** (enforced in code):
+- Learning rates: 0.01 (linear), 0.0001 (fine-tuning)
+- Batch size: 32
+- Epochs: 30 (100% data), 20 (few-shot)
+- Seed: 42
+- Data split: 90% train / 10% validation
+- Few-shot percentages: 100%, 20%, 5%
+
+**Variable Parameters**:
+- Model: ResNet50, EfficientNet-B0, InceptionV3
+- Training mode: 6 different fine-tuning strategies
+- Few-shot percentage: 100, 20, 5
+
+## 🎯 Key Findings to Expect
+
+1. **Few-shot degradation**: Model accuracy decreases with less training data
+2. **Mode effectiveness**: Full FT > Partial > Last Block > Linear Probe (generally)
+3. **Model robustness**: EfficientNet-B0 often best with limited data
+4. **Corruption sensitivity**: All models degrade with Gaussian noise > brightness > motion blur
+5. **Layer importance**: Final layers learn most important features for classification
+
+## 🐛 Troubleshooting
 
 **GPU Out of Memory:**
 ```python
 # Reduce batch size in config.py
-BATCH_SIZE = 16  # Instead of 32
+BATCH_SIZE = 16
 ```
 
-**Model Not Found:**
+**Model file not found:**
 ```bash
-python train.py --list-models
-# Check available models
+# Check folder name format: results_{mode}_{model}_{percentage}/final_model.pth
+ls results_*/final_model.pth
 ```
 
-**Data Loading Issues:**
-```python
-# Verify data paths in config.py
-TRAIN_DIR = './data/split_data/train'
+**Data loading issues:**
+```bash
+# Verify split creation
+python create_splits.py
+
+# Check data directories
+ls data/split_data_fewshot_*/
 ```
 
-## PyTorch Implementation Details
+## 📚 References
 
-### Data Loading
-- Custom `SatelliteImageDataset` class extending `torch.utils.data.Dataset`
-- PyTorch `DataLoader` with multiple workers for efficient loading
-- Batch processing with automatic GPU transfer
+- **ResNet**: He et al. (2015). Deep Residual Learning for Image Recognition
+- **EfficientNet**: Tan & Le (2019). EfficientNet: Rethinking Model Scaling
+- **InceptionV3**: Szegedy et al. (2016). Rethinking the Inception Architecture
+- **PyTorch**: https://pytorch.org/
+- **Assignment**: GNR 638 - Satellite Image Classification
 
-### Model Architecture
-- Base models from `torchvision.models` with pre-trained weights
-- Custom sequential head with linear layers and dropout
-- Proper feature extraction and classification layers
+## 📄 License
 
-### Training
-- CrossEntropyLoss for multi-class classification
-- Adam optimizer with configurable learning rates
-- Learning rate scheduler (ReduceLROnPlateau)
-- Early stopping based on validation loss
-
-### Evaluation
-- Batch-wise predictions with no_grad context
-- NumPy array conversions for scikit-learn compatibility
-- GPU-efficient evaluation with proper memory management
-
-## References
-
-- ResNet: He, K., et al. (2015). Deep Residual Learning for Image Recognition
-- EfficientNet: Tan, M., & Le, Q. V. (2019). EfficientNet: Rethinking Model Scaling
-- Inception: Szegedy, C., et al. (2016). Rethinking the Inception Architecture
-- PyTorch: https://pytorch.org/
-
-## License
-
-This project is part of the GNR 638 course assignment.
+Part of GNR 638 Course Assignment

@@ -10,44 +10,30 @@ from torchvision import transforms
 from PIL import Image
 import numpy as np
 import time
+from pathlib import Path
 from config import (
-    TRAIN_DIR, VAL_DIR, TEST_DIR, BATCH_SIZE, 
-    DATA_AUGMENTATION_CONFIG, CLASS_NAMES
+    BATCH_SIZE, DATA_AUGMENTATION_CONFIG, CLASS_NAMES, RANDOM_SEED
 )
 
 
-class SatelliteImageDataset(Dataset):
-    """Custom PyTorch Dataset for satellite images"""
+class CustomSplitDataset(Dataset):
+    """Custom PyTorch Dataset for pre-split image lists"""
     
-    def __init__(self, root_dir, class_names, transform=None):
+    def __init__(self, image_paths, labels, class_names, transform=None):
         """
         Args:
-            root_dir (str): Directory with all the images organized by class
+            image_paths (list): List of image file paths
+            labels (list): List of class labels
             class_names (list): List of class names
             transform (callable, optional): Optional transform to be applied on images
         """
-        self.root_dir = root_dir
+        self.image_paths = image_paths
+        self.labels = labels
         self.class_names = class_names
         self.transform = transform
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(class_names)}
-        self.images = []
-        self.labels = []
-        
-        # Load all image paths
-        for class_name in class_names:
-            class_path = os.path.join(root_dir, class_name)
-            if not os.path.exists(class_path):
-                print(f"Warning: Class directory not found: {class_path}")
-                continue
-                
-            for img_name in os.listdir(class_path):
-                if img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-                    img_path = os.path.join(class_path, img_name)
-                    self.images.append(img_path)
-                    self.labels.append(self.class_to_idx[class_name])
     
     def __len__(self):
-        return len(self.images)
+        return len(self.image_paths)
     
     def __getitem__(self, idx):
         """
@@ -59,7 +45,7 @@ class SatelliteImageDataset(Dataset):
         Returns:
             tuple: (image, label)
         """
-        img_path = self.images[idx]
+        img_path = self.image_paths[idx]
         label = self.labels[idx]
         
         # Load image
@@ -125,33 +111,69 @@ def get_transforms(img_size=(224, 224), augment=True):
     return {'train': train_transform, 'val': val_transform}
 
 
-def get_data_loaders(img_size=(224, 224), batch_size=BATCH_SIZE):
+def get_data_loaders(img_size=(224, 224), batch_size=BATCH_SIZE, train_split=0.9):
     """
-    Create PyTorch data loaders
+    Create PyTorch data loaders with train/val split from original data
     
     Args:
         img_size (tuple): Image size (height, width)
         batch_size (int): Batch size for data loaders
+        train_split (float): Proportion of data for training (0-1), rest for validation
         
     Returns:
         tuple: (train_loader, val_loader, data_loading_time)
     """
     start_time = time.time()
     print(f"\nLoading data with image size {img_size}...")
+    print(f"Train/Val split: {train_split*100:.0f}% / {(1-train_split)*100:.0f}%")
     
     # Get transforms
     transforms_dict = get_transforms(img_size, augment=True)
     
-    # Create datasets
-    train_dataset = SatelliteImageDataset(
-        TRAIN_DIR,
-        CLASS_NAMES,
+    # Load all data from original train_data directory
+    data_root = Path('data/train_data')
+    
+    # Collect all images with their paths and labels
+    all_images = []
+    all_labels = []
+    
+    for class_idx, class_name in enumerate(CLASS_NAMES):
+        class_path = data_root / class_name
+        if not class_path.exists():
+            print(f"Warning: Class directory not found: {class_path}")
+            continue
+        
+        for img_name in os.listdir(class_path):
+            if img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                img_path = str(class_path / img_name)
+                all_images.append(img_path)
+                all_labels.append(class_idx)
+    
+    # Set random seed for reproducible split
+    np.random.seed(RANDOM_SEED)
+    indices = np.arange(len(all_images))
+    np.random.shuffle(indices)
+    
+    # Split indices
+    split_idx = int(len(indices) * train_split)
+    train_indices = indices[:split_idx]
+    val_indices = indices[split_idx:]
+    
+    # Create train and validation datasets
+    train_images = [all_images[i] for i in train_indices]
+    train_labels = [all_labels[i] for i in train_indices]
+    
+    val_images = [all_images[i] for i in val_indices]
+    val_labels = [all_labels[i] for i in val_indices]
+    
+    # Create custom datasets for train and val
+    train_dataset = CustomSplitDataset(
+        train_images, train_labels, CLASS_NAMES, 
         transform=transforms_dict['train']
     )
     
-    val_dataset = SatelliteImageDataset(
-        VAL_DIR,
-        CLASS_NAMES,
+    val_dataset = CustomSplitDataset(
+        val_images, val_labels, CLASS_NAMES,
         transform=transforms_dict['val']
     )
     
@@ -183,47 +205,6 @@ def get_data_loaders(img_size=(224, 224), batch_size=BATCH_SIZE):
     return train_loader, val_loader, loading_time
 
 
-def get_test_loader(img_size=(224, 224), batch_size=BATCH_SIZE):
-    """
-    Create test data loader
-    
-    Args:
-        img_size (tuple): Image size (height, width)
-        batch_size (int): Batch size for data loader
-        
-    Returns:
-        DataLoader: Test data loader
-    """
-    print(f"\nLoading test data with image size {img_size}...")
-    
-    # Get transforms (no augmentation for test)
-    val_transform = transforms.Compose([
-        transforms.Resize(img_size),
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-    ])
-    
-    test_dataset = SatelliteImageDataset(
-        TEST_DIR,
-        CLASS_NAMES,
-        transform=val_transform
-    )
-    
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True
-    )
-    
-    print(f"Test samples: {len(test_dataset)}")
-    
-    return test_loader
-
 
 def get_dataset_info():
     """Print dataset information"""
@@ -231,24 +212,30 @@ def get_dataset_info():
     print("DATASET INFORMATION")
     print("=" * 70)
     
-    train_count = sum([len(os.listdir(os.path.join(TRAIN_DIR, c))) for c in CLASS_NAMES])
-    val_count = sum([len(os.listdir(os.path.join(VAL_DIR, c))) for c in CLASS_NAMES])
-    test_count = sum([len(os.listdir(os.path.join(TEST_DIR, c))) for c in CLASS_NAMES])
+    data_root = Path('data/train_data')
+    total_count = 0
+    
+    for class_name in CLASS_NAMES:
+        class_path = data_root / class_name
+        if class_path.exists():
+            count = len([f for f in os.listdir(class_path) 
+                        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
+            total_count += count
+    
+    train_count = int(total_count * 0.9)
+    val_count = total_count - train_count
     
     print(f"\nNumber of Classes: {len(CLASS_NAMES)}")
     print(f"Classes: {', '.join(CLASS_NAMES[:5])}... (showing first 5 of {len(CLASS_NAMES)})")
-    print(f"\nTraining samples: {train_count}")
-    print(f"Validation samples: {val_count}")
-    print(f"Test samples: {test_count}")
-    print(f"Total samples: {train_count + val_count + test_count}")
+    print(f"\nTraining samples (90%): {train_count}")
+    print(f"Validation samples (10%): {val_count}")
+    print(f"Total samples: {total_count}")
     print("=" * 70)
 
 
 if __name__ == "__main__":
     get_dataset_info()
-    train_loader, val_loader = get_data_loaders()
-    test_loader = get_test_loader()
+    train_loader, val_loader, _ = get_data_loaders()
     print(f"\nLoaders created successfully!")
     print(f"Train batches: {len(train_loader)}")
     print(f"Val batches: {len(val_loader)}")
-    print(f"Test batches: {len(test_loader)}")

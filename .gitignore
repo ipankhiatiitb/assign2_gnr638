@@ -1,2 +1,7 @@
 data/
 results/
+results_full_finetune_efficientnetb0/
+results_full_finetune_inceptionv3/
+results_full_finetune_resnet50/
+results_linear_probe/
+results_pa/

@@ -1,6 +1,15 @@
 """
-Configuration file for Satellite Image Classification Assignment
-Defines all parameters via command-line arguments with defaults
+Configuration file for GNR 638 Assignment 2: Transfer Learning & Robustness Analysis
+Defines all parameters via command-line arguments with assignment constraints
+Reference: GNR_638_Assignment_2.pdf
+
+ASSIGNMENT CONSTRAINTS:
+- Dataset: Aerial Images Dataset (AID) - 30 classes
+- Models: ResNet50, InceptionV3, EfficientNet-B0 (all pre-trained on ImageNet)
+- Max epochs: 30 for full-data, 20 for few-shot
+- Max 6 hours per model per scenario
+- Learning rates: 0.01 for linear_probe, 0.0001 for fine-tuning
+- Reproducibility: Fixed random seed for all experiments
 """
 
 import os
@@ -9,40 +18,53 @@ import torch
 from pathlib import Path
 
 # ============================================================================
+# ASSIGNMENT CONSTRAINT CONSTANTS
+# ============================================================================
+MAX_EPOCHS_FULL_DATA = 30  # Assignment constraint 6
+MAX_EPOCHS_FEW_SHOT = 20   # Assignment constraint 6
+MAX_HOURS_PER_SCENARIO = 6  # Assignment constraint 6
+NUM_CLASSES = 30  # AID dataset
+RANDOM_SEED = 42  # For reproducibility
+
+# ============================================================================
 # ARGUMENT PARSER SETUP
 # ============================================================================
 
 def create_parser():
     """Create and return argument parser with all configuration options"""
     parser = argparse.ArgumentParser(
-        description='Satellite Image Classification - Configuration',
+        description='GNR 638 Assignment 2: Pre-trained CNN Transfer Learning & Robustness',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python train.py --model resnet50 --training-mode linear_probe
-  python train.py --model efficientnetb0 --training-mode two_stage --epochs 50
-  python train.py --all --batch-size 64 --learning-rate 0.0001
-  python train.py --model resnet50 --device cuda:1
+  python train.py --model efficientnetb0 --training-mode selective_20percent_last
+  python train.py --model resnet50 --training-mode two_stage --few-shot-percentage 5
+  python train.py --model inceptionv3 --training-mode full_finetune --few-shot-percentage 100
         """
     )
     
     # ========== Data Configuration ==========
     parser.add_argument('--batch-size', type=int, default=32,
                        help='Batch size for training (default: 32)')
-    parser.add_argument('--random-seed', type=int, default=42,
+    parser.add_argument('--random-seed', type=int, default=RANDOM_SEED,
                        help='Random seed for reproducibility (default: 42)')
     parser.add_argument('--num-workers', type=int, default=4,
                        help='Number of data loading workers (default: 4)')
     
+    # ========== Few-Shot Configuration (Assignment 4.3) ==========
+    parser.add_argument('--few-shot-percentage', type=int, choices=[5, 20, 100], default=100,
+                       help='Percentage of training data to use: 5%% (extreme), 20%% (low), 100%% (full). Default: 100')
+    
     # ========== Training Configuration ==========
-    parser.add_argument('--epochs', type=int, default=2,
-                       help='Number of epochs for training (default: 30)')
-    parser.add_argument('--learning-rate', '--lr', type=float, default=0.001,
-                       help='Initial learning rate (default: 0.001)')
+    parser.add_argument('--epochs', type=int, default=MAX_EPOCHS_FULL_DATA,
+                       help=f'Number of epochs for training (max: {MAX_EPOCHS_FULL_DATA} for full-data, {MAX_EPOCHS_FEW_SHOT} for few-shot)')
+    parser.add_argument('--learning-rate', '--lr', type=float, default=0.01,
+                       help='Learning rate for linear_probe (default: 0.01, per assignment)')
     parser.add_argument('--finetune-lr', type=float, default=0.0001,
-                       help='Fine-tuning learning rate (default: 0.0001)')
-    parser.add_argument('--early-stopping-patience', type=int, default=5,
-                       help='Early stopping patience (default: 5)')
+                       help='Learning rate for fine-tuning modes (default: 0.0001, per assignment)')
+    parser.add_argument('--early-stopping-patience', type=int, default=1000,
+                       help='Early stopping patience (default: 1000 - disabled)')
     parser.add_argument('--reduce-lr-patience', type=int, default=3,
                        help='Learning rate reduction patience (default: 3)')
     parser.add_argument('--reduce-lr-factor', type=float, default=0.5,
@@ -54,19 +76,18 @@ Examples:
     parser.add_argument('--dropout-rate', type=float, default=0.3,
                        help='Dropout rate for all models (default: 0.3)')
     parser.add_argument('--num-layers-unfreeze', type=int, default=50,
-                       help='Number of layers to unfreeze during fine-tuning (default: 50)')
+                       help='Number of layers to unfreeze during partial_finetune (default: 50)')
     
-    # ========== Training Mode Configuration ==========
+    # ========== Training Mode Configuration (Assignment 4.2) ==========
     parser.add_argument('--training-mode', '-t', 
-                       choices=['linear_probe', 'partial_finetune', 'full_finetune', 'two_stage'],
+                       choices=['linear_probe', 'last_block_finetune', 'partial_finetune', 
+                               'selective_20percent_last', 'selective_20percent_random', 'full_finetune', 'two_stage'],
                        default='two_stage',
-                       help='Training mode strategy (default: two_stage)')
+                       help='Training mode strategy: linear_probe, last_block_finetune, partial_finetune, selective_20percent_last, selective_20percent_random, full_finetune, two_stage (default: two_stage)')
     
-    # ========== Few-Shot Learning ==========
-    parser.add_argument('--few-shot', action='store_true',
-                       help='Enable few-shot learning')
-    parser.add_argument('--samples-per-class', type=int, default=10,
-                       help='Number of samples per class for few-shot learning (default: 10)')
+    # ========== Few-Shot Learning (Assignment 4.3) ==========
+    # Removed --few-shot flag, now use --few-shot-percentage instead
+    # Options: 5% (extreme low-data), 20% (low-data), 100% (full data baseline)
     
     # ========== Device Configuration ==========
     parser.add_argument('--device', '-d', default='cuda' if torch.cuda.is_available() else 'cpu',
@@ -95,6 +116,8 @@ Examples:
                        help='Save confusion matrices (default: True)')
     parser.add_argument('--generate-reports', action='store_true', default=True,
                        help='Generate classification reports (default: True)')
+    parser.add_argument('--report-efficiency', action='store_true', default=True,
+                       help='Report model efficiency (parameters, MACs, FLOPs) per assignment (default: True)')
     
     return parser
 
@@ -116,18 +139,28 @@ def get_config(args=None):
     # ============================================================================
     # DEVICE SETUP
     # ============================================================================
+    # Parse device - support cuda, cpu, cuda:0, cuda:1, etc.
+    device_str = args.device
     try:
-        device = torch.device(args.device)
+        device = torch.device(device_str)
     except:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     cuda_available = device.type == 'cuda'
+    gpu_names = []
+    gpu_indices = []
+    
     if cuda_available:
-        gpu_name = torch.cuda.get_device_name(device)
-        gpu_count = torch.cuda.device_count()
-    else:
-        gpu_name = "None"
-        gpu_count = 0
+        if device.index is not None:
+            # Single GPU specified like cuda:0
+            gpu_indices = [device.index]
+            gpu_names = [torch.cuda.get_device_name(device.index)]
+        else:
+            # All GPUs available
+            gpu_indices = list(range(torch.cuda.device_count()))
+            gpu_names = [torch.cuda.get_device_name(i) for i in gpu_indices]
+    
+    gpu_count = len(gpu_indices)
     
     # ============================================================================
     # PATHS SETUP
@@ -194,41 +227,78 @@ def get_config(args=None):
     }
     
     # ============================================================================
-    # TRAINING MODES CONFIGURATION
+    # TRAINING MODES CONFIGURATION (Assignment 4.2)
     # ============================================================================
+    # Assignment Requirements:
+    # - All modes must have fixed hyperparameters except data percentage (4.3)
+    # - Linear probe: 0.01 learning rate (unfrozen head only)
+    # - Fine-tuning modes: 0.0001 learning rate
+    # - Selective 20%: Must explain reasoning (balance between expressiveness & overfitting)
+    
+    # Validate epochs based on few-shot setting
+    effective_epochs = args.epochs
+    if args.few_shot_percentage < 100:
+        effective_epochs = min(args.epochs, MAX_EPOCHS_FEW_SHOT)
+    else:
+        effective_epochs = min(args.epochs, MAX_EPOCHS_FULL_DATA)
+    
     training_modes = {
         'linear_probe': {
-            'description': 'Linear Probing - Train only top classification layer',
+            'description': '[Assignment 4.1] Linear Probing - Frozen backbone, train only classification head',
             'freeze_backbone': True,
-            'learning_rate': args.learning_rate,
-            'epochs': args.epochs,
+            'learning_rate': 0.01,  # Fixed per assignment
+            'epochs': effective_epochs,
+            'num_layers_to_unfreeze': None,
+        },
+        'last_block_finetune': {
+            'description': '[Assignment 4.2] Last Block Fine-tuning - Unfreeze last 3 layers (~2% params)',
+            'freeze_backbone': False,
+            'num_layers_to_unfreeze': 3,
+            'learning_rate': 0.0001,  # Fixed per assignment
+            'epochs': effective_epochs,
         },
         'partial_finetune': {
-            'description': 'Partial Fine-tuning - Train last N layers + head',
+            'description': '[Assignment 4.2] Partial Fine-tuning - Unfreeze last N layers (~30% default)',
             'freeze_backbone': False,
             'num_layers_to_unfreeze': args.num_layers_unfreeze,
-            'learning_rate': args.finetune_lr,
-            'epochs': args.epochs,
+            'learning_rate': 0.0001,  # Fixed per assignment
+            'epochs': effective_epochs,
+        },
+        'selective_20percent_last': {
+            'description': '[Assignment 4.2] Selective 20% (Last) - Unfreeze last 20% of params from end',
+            'freeze_backbone': False,
+            'num_layers_to_unfreeze': 'auto_20percent_last',
+            'learning_rate': 0.0001,  # Fixed per assignment
+            'epochs': effective_epochs,
+            'strategy': 'last',
+        },
+        'selective_20percent_random': {
+            'description': '[Assignment 4.2] Selective 20% (Random) - Randomly unfreeze 20% of params',
+            'freeze_backbone': False,
+            'num_layers_to_unfreeze': 'auto_20percent_random',
+            'learning_rate': 0.0001,  # Fixed per assignment
+            'epochs': effective_epochs,
+            'strategy': 'random',
         },
         'full_finetune': {
-            'description': 'Full Fine-tuning - Train all layers',
+            'description': '[Assignment 4.2] Full Fine-tuning - Unfreeze all backbone layers',
             'freeze_backbone': False,
             'num_layers_to_unfreeze': None,
-            'learning_rate': args.finetune_lr,
-            'epochs': args.epochs,
+            'learning_rate': 0.0001,  # Fixed per assignment
+            'epochs': effective_epochs,
         },
         'two_stage': {
-            'description': 'Two-Stage - Linear probe then fine-tune',
+            'description': '[Assignment 4.2] Two-Stage - Linear probe then partial fine-tune',
             'stage_1': {
                 'freeze_backbone': True,
-                'learning_rate': args.learning_rate,
-                'epochs': args.epochs // 2 if args.epochs > 0 else 30,
+                'learning_rate': 0.01,  # Fixed per assignment
+                'epochs': effective_epochs // 2 if effective_epochs > 0 else 15,
             },
             'stage_2': {
                 'freeze_backbone': False,
                 'num_layers_to_unfreeze': args.num_layers_unfreeze,
-                'learning_rate': args.finetune_lr,
-                'epochs': args.epochs - (args.epochs // 2) if args.epochs > 0 else 30,
+                'learning_rate': 0.0001,  # Fixed per assignment
+                'epochs': effective_epochs - (effective_epochs // 2) if effective_epochs > 0 else 15,
             }
         }
     }
@@ -249,11 +319,21 @@ def get_config(args=None):
     }
     
     # ============================================================================
-    # FEW-SHOT LEARNING CONFIGURATION
+    # FEW-SHOT LEARNING CONFIGURATION (Assignment 4.3)
     # ============================================================================
+    # Assignment Requirements:
+    # - 100% training data (full baseline)
+    # - 20% training data (low-data regime)
+    # - 5% training data (extreme low-data regime)
+    # - Max 20 epochs for few-shot (vs 30 for full-data)
+    # - Must use random seed for subset generation
+    
     few_shot_config = {
-        'enabled': args.few_shot,
-        'samples_per_class': args.samples_per_class,
+        'percentage': args.few_shot_percentage,  # 5, 20, or 100
+        'use_subset': args.few_shot_percentage < 100,
+        'max_epochs': MAX_EPOCHS_FEW_SHOT if args.few_shot_percentage < 100 else MAX_EPOCHS_FULL_DATA,
+        'random_seed': args.random_seed,
+        'description': f'Few-shot learning with {args.few_shot_percentage}% of training data'
     }
     
     # ============================================================================
@@ -262,8 +342,10 @@ def get_config(args=None):
     config = {
         # Device
         'device': device,
+        'gpu_indices': gpu_indices,
+        'gpu_names': gpu_names,
         'cuda_available': cuda_available,
-        'gpu_name': gpu_name,
+        'gpu_name': gpu_names[0] if gpu_names else "None",
         'gpu_count': gpu_count,
         
         # Paths
@@ -302,8 +384,21 @@ def get_config(args=None):
         # Data augmentation
         'data_augmentation_config': data_augmentation_config,
         
-        # Few-shot learning
+        # Few-shot learning (Assignment 4.3)
         'few_shot_config': few_shot_config,
+        'few_shot_percentage': args.few_shot_percentage,
+        
+        # Assignment constraints
+        'assignment_constraints': {
+            'max_epochs_full_data': MAX_EPOCHS_FULL_DATA,
+            'max_epochs_few_shot': MAX_EPOCHS_FEW_SHOT,
+            'max_hours_per_scenario': MAX_HOURS_PER_SCENARIO,
+            'num_classes': NUM_CLASSES,
+            'random_seed': RANDOM_SEED,
+            'few_shot_percentages': [5, 20, 100],
+            'linear_probe_lr': 0.01,
+            'finetune_lr': 0.0001,
+        },
         
         # Display
         'verbose': args.verbose,
@@ -311,45 +406,86 @@ def get_config(args=None):
         'plot_history': args.plot_history,
         'save_confusion_matrices': args.save_confusion_matrices,
         'generate_classification_reports': args.generate_reports,
+        'report_efficiency': args.report_efficiency,
     }
     
     return config
 
 
 def print_config(config):
-    """Print configuration summary"""
-    print("=" * 70)
-    print("CONFIGURATION SUMMARY")
-    print("=" * 70)
-    print(f"\nProject Root: {config['project_root']}")
-    print(f"Data Path: {config['data_path']}")
-    print(f"Results Directory: {config['results_dir']}")
-    print(f"\nDevice Configuration:")
-    print(f"  Device: {config['device']}")
-    print(f"  CUDA Available: {config['cuda_available']}")
+    """Print configuration summary with assignment constraints"""
+    print("=" * 80)
+    print(" GNR 638 ASSIGNMENT 2: TRANSFER LEARNING & ROBUSTNESS ANALYSIS")
+    print("=" * 80)
+    
+    # Assignment Constraints
+    print("\n[ASSIGNMENT CONSTRAINTS]")
+    constraints = config['assignment_constraints']
+    print(f"  Max Epochs (Full Data):     {constraints['max_epochs_full_data']}")
+    print(f"  Max Epochs (Few-Shot):      {constraints['max_epochs_few_shot']}")
+    print(f"  Max Hours per Scenario:     {constraints['max_hours_per_scenario']} hours")
+    print(f"  Dataset:                    Aerial Images (AID) - {constraints['num_classes']} classes")
+    print(f"  Linear Probe LR:            {constraints['linear_probe_lr']}")
+    print(f"  Fine-tuning LR:             {constraints['finetune_lr']}")
+    print(f"  Random Seed (Reproducibility): {constraints['random_seed']}")
+    print(f"  Few-Shot Percentages:       {constraints['few_shot_percentages']}")
+    
+    # Paths
+    print(f"\n[PATHS]")
+    print(f"  Project Root:               {config['project_root']}")
+    print(f"  Data Path:                  {config['data_path']}")
+    print(f"  Results Directory:          {config['results_dir']}")
+    
+    # Device
+    print(f"\n[DEVICE CONFIGURATION]")
+    print(f"  Device:                     {config['device']}")
+    print(f"  CUDA Available:             {config['cuda_available']}")
     if config['cuda_available']:
-        print(f"  GPU Name: {config['gpu_name']}")
-        print(f"  GPU Count: {config['gpu_count']}")
-    print(f"\nTraining Configuration:")
-    print(f"  Batch Size: {config['batch_size']}")
-    print(f"  Epochs: {config['epochs']}")
-    print(f"  Learning Rate: {config['initial_learning_rate']}")
-    print(f"  Fine-tune LR: {config['finetune_learning_rate']}")
-    print(f"  Random Seed: {config['random_seed']}")
-    print(f"\nModel Configuration:")
-    print(f"  Number of Classes: {config['num_classes']}")
-    print(f"  Dropout Rate: {config['dropout_rate']}")
-    print(f"  Layers to Unfreeze: {config['num_layers_to_unfreeze']}")
-    print(f"\nSelected Training Mode: {config['selected_training_mode']}")
-    print(f"  Description: {config['training_modes'][config['selected_training_mode']]['description']}")
-    print(f"\nFew-Shot Learning: {'Enabled' if config['few_shot_config']['enabled'] else 'Disabled'}")
-    if config['few_shot_config']['enabled']:
-        print(f"  Samples per class: {config['few_shot_config']['samples_per_class']}")
-    print(f"\nAvailable Models:")
+        print(f"  GPU Name(s):                {', '.join(config['gpu_names'])}")
+        print(f"  GPU Count:                  {config['gpu_count']}")
+    
+    # Training
+    print(f"\n[TRAINING CONFIGURATION]")
+    print(f"  Batch Size:                 {config['batch_size']}")
+    print(f"  Epochs:                     {config['epochs']}")
+    print(f"  Few-Shot Percentage:        {config['few_shot_percentage']}%")
+    print(f"  Effective Epochs:           {config['training_modes'][config['selected_training_mode']]['epochs']}")
+    print(f"  Random Seed:                {config['random_seed']}")
+    print(f"  Early Stopping Patience:    {config['early_stopping_patience']}")
+    
+    # Model
+    print(f"\n[MODEL CONFIGURATION]")
+    print(f"  Number of Classes:          {config['num_classes']}")
+    print(f"  Dropout Rate:               {config['dropout_rate']}")
+    print(f"  Layers to Unfreeze:         {config['num_layers_to_unfreeze']}")
+    print(f"  Report Efficiency Metrics:  {config['report_efficiency']}")
+    
+    # Training Mode
+    print(f"\n[TRAINING MODE (Assignment 4.2)]")
+    mode_name = config['selected_training_mode']
+    mode_config = config['training_modes'][mode_name]
+    print(f"  Mode:                       {mode_name}")
+    print(f"  Description:                {mode_config['description']}")
+    print(f"  Learning Rate:              {mode_config['learning_rate']}")
+    print(f"  Epochs:                     {mode_config['epochs']}")
+    if 'strategy' in mode_config:
+        print(f"  Strategy:                   {mode_config['strategy']}")
+    
+    # Few-Shot
+    print(f"\n[FEW-SHOT CONFIGURATION (Assignment 4.3)]")
+    print(f"  Percentage:                 {config['few_shot_percentage']}%")
+    print(f"  Use Subset:                 {config['few_shot_config']['use_subset']}")
+    print(f"  Max Epochs:                 {config['few_shot_config']['max_epochs']}")
+    print(f"  Description:                {config['few_shot_config']['description']}")
+    
+    # Models
+    print(f"\n[AVAILABLE MODELS]")
     for model_name in config['models_config'].keys():
         model_info = config['models_config'][model_name]
-        print(f"  - {model_name}: Input size {model_info['input_size']}")
-    print("=" * 70)
+        print(f"  - {model_info['name']:20s} (Input: {model_info['input_size']})")
+    
+    print("=" * 80)
+
 
 
 def get_model_config(model_name_or_config, model_name=None):

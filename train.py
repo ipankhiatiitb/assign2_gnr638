@@ -29,8 +29,10 @@ def setup_gpu(config):
     print(f"  Device: {config['device']}")
     print(f"  CUDA Available: {config['cuda_available']}")
     if config['cuda_available']:
-        print(f"  GPU Name: {config['gpu_name']}")
+        print(f"  GPU Name(s): {', '.join(config['gpu_names'])}")
         print(f"  GPU Count: {config['gpu_count']}")
+        if config['gpu_count'] > 1:
+            print(f"  Multi-GPU Training Enabled ({config['gpu_count']} GPUs)")
         print("  GPU memory management enabled")
     else:
         print("  No GPU detected. Training will use CPU.")

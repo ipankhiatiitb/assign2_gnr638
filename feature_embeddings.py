@@ -58,16 +58,19 @@ class FeatureExtractor:
         print(f"✓ Loaded model from {best_model_path}\n")
         
         # Get test loader
-        test_loader, _ = get_test_loader(model_config['input_size'])
+        test_loader = get_test_loader(model_config['input_size'], self.config['batch_size'])
         
         # Extract features
         print("Extracting features from test set...")
         features_list = []
         labels_list = []
-        predictions_list = []
         
         # Create feature extraction model (backbone only)
-        feature_model = trainer.model[0]  # Get the backbone
+        # Handle DataParallel wrapper
+        if isinstance(trainer.model, nn.DataParallel):
+            feature_model = trainer.model.module
+        else:
+            feature_model = trainer.model
         feature_model.eval()
         
         with torch.no_grad():
@@ -88,6 +91,15 @@ class FeatureExtractor:
         
         print(f"✓ Extracted {len(all_features)} features of shape {all_features.shape}")
         print(f"✓ Feature dimension: {all_features.shape[1]}")
+        
+        # Sample features for faster t-SNE computation (max 500 samples)
+        if len(all_features) > 500:
+            print(f"\n⚠ Sampling {min(500, len(all_features))} features for faster t-SNE computation...")
+            np.random.seed(42)
+            sample_indices = np.random.choice(len(all_features), 500, replace=False)
+            all_features = all_features[sample_indices]
+            all_labels = all_labels[sample_indices]
+            print(f"✓ Using {len(all_features)} samples for visualization")
         
         return all_features, all_labels
     
@@ -111,7 +123,7 @@ class FeatureExtractor:
             features_pca[:, 1],
             c=labels,
             cmap='tab20c',
-            alpha=0.6,
+            alpha=0.9,
             s=30,
             edgecolors='k',
             linewidth=0.3
@@ -143,7 +155,7 @@ class FeatureExtractor:
         print("\nGenerating t-SNE visualization (this may take a moment)...")
         
         # Apply t-SNE
-        tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=1000, random_state=42, n_jobs=-1)
+        tsne = TSNE(n_components=2, perplexity=perplexity, max_iter=1000, random_state=42)
         features_tsne = tsne.fit_transform(features)
         
         # Create visualization
@@ -154,7 +166,7 @@ class FeatureExtractor:
             features_tsne[:, 1],
             c=labels,
             cmap='tab20c',
-            alpha=0.6,
+            alpha=0.9,
             s=30,
             edgecolors='k',
             linewidth=0.3
@@ -193,7 +205,7 @@ class FeatureExtractor:
         print("\nGenerating UMAP visualization (this may take a moment)...")
         
         # Apply UMAP
-        reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, random_state=42, n_jobs=-1)
+        reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, random_state=42)
         features_umap = reducer.fit_transform(features)
         
         # Create visualization
@@ -204,7 +216,7 @@ class FeatureExtractor:
             features_umap[:, 1],
             c=labels,
             cmap='tab20c',
-            alpha=0.6,
+            alpha=0.9,
             s=30,
             edgecolors='k',
             linewidth=0.3
