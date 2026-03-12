@@ -111,60 +111,77 @@ def get_transforms(img_size=(224, 224), augment=True):
     return {'train': train_transform, 'val': val_transform}
 
 
-def get_data_loaders(img_size=(224, 224), batch_size=BATCH_SIZE, train_split=0.9):
+def get_data_loaders(img_size=(224, 224), batch_size=BATCH_SIZE, train_split=0.9, few_shot_percentage=100):
     """
-    Create PyTorch data loaders with train/val split from original data
+    Create PyTorch data loaders with train/val split from pre-split directories
     
     Args:
         img_size (tuple): Image size (height, width)
         batch_size (int): Batch size for data loaders
         train_split (float): Proportion of data for training (0-1), rest for validation
+        few_shot_percentage (int): Percentage of training data to use (100, 20, or 5)
         
     Returns:
         tuple: (train_loader, val_loader, data_loading_time)
     """
     start_time = time.time()
     print(f"\nLoading data with image size {img_size}...")
+    print(f"Few-Shot Percentage: {few_shot_percentage}%")
     print(f"Train/Val split: {train_split*100:.0f}% / {(1-train_split)*100:.0f}%")
     
     # Get transforms
     transforms_dict = get_transforms(img_size, augment=True)
     
-    # Load all data from original train_data directory
-    data_root = Path('data/train_data')
+    # Determine which split directory to load from
+    if few_shot_percentage == 100:
+        split_dir = 'split_data'
+    else:
+        split_dir = f'split_data_fewshot_{few_shot_percentage}pct'
     
-    # Collect all images with their paths and labels
-    all_images = []
-    all_labels = []
+    # Load data from pre-split directories
+    data_root = Path('data') / split_dir
+    
+    train_dir = data_root / 'train'
+    val_dir = data_root / 'val'
+    
+    # Verify directories exist
+    if not train_dir.exists() or not val_dir.exists():
+        raise FileNotFoundError(
+            f"Split directories not found. Expected {train_dir} and {val_dir}. "
+            f"Run 'python create_splits.py' first to create the splits."
+        )
+    
+    # Load training data
+    train_images = []
+    train_labels = []
     
     for class_idx, class_name in enumerate(CLASS_NAMES):
-        class_path = data_root / class_name
-        if not class_path.exists():
-            print(f"Warning: Class directory not found: {class_path}")
+        class_train_path = train_dir / class_name
+        if not class_train_path.exists():
+            print(f"Warning: Training class directory not found: {class_train_path}")
             continue
         
-        for img_name in os.listdir(class_path):
+        for img_name in os.listdir(class_train_path):
             if img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-                img_path = str(class_path / img_name)
-                all_images.append(img_path)
-                all_labels.append(class_idx)
+                img_path = str(class_train_path / img_name)
+                train_images.append(img_path)
+                train_labels.append(class_idx)
     
-    # Set random seed for reproducible split
-    np.random.seed(RANDOM_SEED)
-    indices = np.arange(len(all_images))
-    np.random.shuffle(indices)
+    # Load validation data
+    val_images = []
+    val_labels = []
     
-    # Split indices
-    split_idx = int(len(indices) * train_split)
-    train_indices = indices[:split_idx]
-    val_indices = indices[split_idx:]
-    
-    # Create train and validation datasets
-    train_images = [all_images[i] for i in train_indices]
-    train_labels = [all_labels[i] for i in train_indices]
-    
-    val_images = [all_images[i] for i in val_indices]
-    val_labels = [all_labels[i] for i in val_indices]
+    for class_idx, class_name in enumerate(CLASS_NAMES):
+        class_val_path = val_dir / class_name
+        if not class_val_path.exists():
+            print(f"Warning: Validation class directory not found: {class_val_path}")
+            continue
+        
+        for img_name in os.listdir(class_val_path):
+            if img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                img_path = str(class_val_path / img_name)
+                val_images.append(img_path)
+                val_labels.append(class_idx)
     
     # Create custom datasets for train and val
     train_dataset = CustomSplitDataset(

@@ -748,7 +748,11 @@ def train_resnet50(model_config, training_mode=None, config=None):
     trainer.build_model(training_mode=training_mode)
     trainer.get_model_summary()
     
-    train_loader, val_loader, data_loading_time = get_data_loaders(model_config['input_size'])
+    few_shot_pct = config.get('few_shot_percentage', 100) if config else 100
+    train_loader, val_loader, data_loading_time = get_data_loaders(
+        model_config['input_size'],
+        few_shot_percentage=few_shot_pct
+    )
     
     # Log data loading time
     data_msg = f"Data Loading Time: {data_loading_time:.2f}s"
@@ -824,7 +828,11 @@ def train_efficientnetb0(model_config, training_mode=None, config=None):
     trainer.build_model(training_mode=training_mode)
     trainer.get_model_summary()
     
-    train_loader, val_loader, data_loading_time = get_data_loaders(model_config['input_size'])
+    few_shot_pct = config.get('few_shot_percentage', 100) if config else 100
+    train_loader, val_loader, data_loading_time = get_data_loaders(
+        model_config['input_size'],
+        few_shot_percentage=few_shot_pct
+    )
     
     # Log data loading time
     data_msg = f"Data Loading Time: {data_loading_time:.2f}s"
@@ -887,7 +895,11 @@ def train_inceptionv3(model_config, training_mode=None, config=None):
     trainer.build_model(training_mode=training_mode)
     trainer.get_model_summary()
     
-    train_loader, val_loader, data_loading_time = get_data_loaders(model_config['input_size'])
+    few_shot_pct = config.get('few_shot_percentage', 100) if config else 100
+    train_loader, val_loader, data_loading_time = get_data_loaders(
+        model_config['input_size'],
+        few_shot_percentage=few_shot_pct
+    )
     
     # Log data loading time
     data_msg = f"Data Loading Time: {data_loading_time:.2f}s"
